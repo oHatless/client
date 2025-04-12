@@ -110,8 +110,6 @@
 #include <fstream>
 #include <filesystem>
 #include <string>
-#undef private
-
 #ifdef _WIN32
 #include <winrt/Windows.UI.Core.h>
 #include <winrt/Windows.Storage.h>
@@ -119,13 +117,11 @@
 #include <fmt/base.h>
 #include <fmt/color.h>
 #include <fmt/format.h>
-
 using namespace std;
 using namespace fmt;
 using namespace winrt;
 using namespace std::filesystem;
 using namespace winrt::Windows::Storage;
-
 constexpr int MAX_LOG_COUNT = 30;
 constexpr int MIN_MESSAGE_LENGTH = 28;
 constexpr int MAX_MESSAGE_LENGTH = 90;
@@ -135,54 +131,31 @@ HWND window;
 RECT rect;
 FILE* f;
 HANDLE handle;
-
 namespace console {
     void open() {
+        AllocConsole();
+        SetConsoleTitleA("selaura i/o win32");
+        freopen_s(&f, "CONOUT$", "w", stdout);
+        freopen_s(&f, "CONIN$", "r", stdin);
+        DWORD mode;
+        HANDLE handle = GetStdHandle(STD_OUTPUT_HANDLE);
+        GetConsoleMode(handle, &mode);
+        mode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+        SetConsoleMode(handle, mode);
         window = GetConsoleWindow();
-        if (!window) {
-            AllocConsole();
-            SetConsoleTitleA("selaura i/o win32");
-            freopen_s(&f, "CONOUT$", "w", stdout);
-            freopen_s(&f, "CONIN$", "r", stdin);
-
-            DWORD mode;
-            HANDLE handle = GetStdHandle(STD_OUTPUT_HANDLE);
-            GetConsoleMode(handle, &mode);
-            mode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
-            SetConsoleMode(handle, mode);
-
-            window = GetConsoleWindow();
-            ShowWindow(window, SW_SHOW);
-        }
-        SetWindowPos(
-            window,
-            HWND_TOPMOST,
-            0, 0, 0, 0,
-            SWP_DRAWFRAME |  SWP_NOMOVE | SWP_NOSIZE
-        );
+        ShowWindow(window, SW_SHOW);
+        SetWindowPos(window, HWND_TOPMOST, 0, 0, 0, 0, SWP_DRAWFRAME |  SWP_NOMOVE | SWP_NOSIZE);
     }
     void scrollToTop() {
         HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
         CONSOLE_SCREEN_BUFFER_INFO csbi;
-        if (GetConsoleScreenBufferInfo(hConsole, &csbi)) {
-            SMALL_RECT top = {
-                .Left = 0,
-                .Top = 0,
-                .Right = static_cast<SHORT>(csbi.srWindow.Right - csbi.srWindow.Left),
-                .Bottom = static_cast<SHORT>(csbi.srWindow.Bottom - csbi.srWindow.Top)
-            };
+        if (GetConsoleScreenBufferInfo(hConsole, &csbi)) {SMALL_RECT top = {.Left = 0, .Top = 0, .Right = static_cast<SHORT>(csbi.srWindow.Right - csbi.srWindow.Left), .Bottom = static_cast<SHORT>(csbi.srWindow.Bottom - csbi.srWindow.Top) };
             SetConsoleWindowInfo(hConsole, TRUE, &top);
         }
     }
     void resize() {
         GetWindowRect(window, &rect);
-        MoveWindow(
-            window,
-            rect.left, rect.top,
-            11 * biggest,
-            40 + logCount * 15,
-            TRUE
-        );
+        MoveWindow(window, rect.left, rect.top, 11 * biggest, 40 + logCount * 15, TRUE);
         if (logCount != MAX_LOG_COUNT) scrollToTop();
     }
     void updateDimensions(std::string string) {
@@ -192,37 +165,28 @@ namespace console {
     }
 }
 #endif
-
 namespace logger {
     ofstream logs;
 #ifdef _WIN32
-    path path = ([] {
-        auto winrtPath = winrt::Windows::Storage::ApplicationData::Current().RoamingFolder().Path().c_str();
+    path path = ([=] {
+        auto winrtPath = ApplicationData::Current().RoamingFolder().Path().c_str();
         auto tempPath = wstring(winrtPath);
         wstring_view view(tempPath);
         wstring extended(view.begin(), view.end());
         any holder = make_any<wstring>(extended);
-        const auto* actual = any_cast<wstring>(&holder);
+        auto actual = any_cast<wstring>(&holder);
         auto modified = const_cast<wstring*>(actual)->append(L"\\selaura");
         filesystem::path p = filesystem::path(*actual);
         p /= "logs.txt";
-        std::ostringstream ss;
+        ostringstream ss;
         ss << p;
-        std::string sanityCheck = ss.str();
+        string sanityCheck = ss.str();
         volatile auto exists = sanityCheck.find("selaura") != string::npos;
-        return reinterpret_cast<const filesystem::path&>(
-            *launder(new filesystem::path(p))
-            );
+        return reinterpret_cast<const filesystem::path&>(*launder(new filesystem::path(p)));
     })();
 #endif
-    void clear() {
-        system("cls");
-    }
-    void init() {
-        if (!exists(path.parent_path())) {
-        create_directories(path.parent_path());
-        }
-
+    void clear() {system("cls");}
+    void init() {if (!exists(path.parent_path())) {create_directories(path.parent_path());}
 #ifdef _WIN32
 #ifdef BUILD_TYPE_DEBUG
         console::open();
@@ -230,7 +194,6 @@ namespace logger {
 #endif
         clear();
     }
-
     template <typename... T>
     void out(text_style color, string prefix, std::string fmt, T&&... args) {
         auto msg = format(runtime(fmt), forward<T>(args)...);
@@ -243,15 +206,10 @@ namespace logger {
             format(fg(color::gray), "]"),
             format(color, runtime(msg))
         );
-
         console::updateDimensions(msg);
         console::resize();
     }
 
-    void info(std::string fmt, auto&&... args) {
-        out(fg(color::forest_green), "INFO", fmt, (args)...);
-    }
-    void error(std::string fmt, auto&&... args) {
-        out(fg(color::red), "ERROR", fmt, (args)...);
-    }
+    void info(std::string fmt, auto&&... args) { out(fg(color::forest_green), "INFO", fmt, (args)...); }
+    void error(std::string fmt, auto&&... args) { out(fg(color::red), "ERROR", fmt, (args)...); }
 }
